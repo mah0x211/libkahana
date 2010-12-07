@@ -1,0 +1,79 @@
+#                                               -*- Autoconf -*-
+# Process this file with autoconf to produce a configure script.
+
+AC_PREREQ(2.61)
+AC_INIT([libkahana], [1.0.0], [mah0x211@gmail.com])
+AC_CONFIG_SRCDIR([src/kahana.c])
+AM_INIT_AUTOMAKE([foreign no-dist no-installinfo no-installman -Wall])
+AC_CONFIG_HEADER([config.h])
+
+# Checks for programs.
+AC_PROG_CC
+AC_PROG_LIBTOOL
+
+# Use Apache Runtime Library
+
+# Include m4 files
+sinclude(m4/apr_common.m4)
+sinclude(m4/find_apr.m4)
+sinclude(m4/find_apu.m4)
+
+echo $ac_n "${nl}Configuring Apache Portable Runtime library...${nl}"
+APR_FIND_APR([apr], [apr], 1, 1)
+if test "$apr_found" = "no"; then
+  AC_MSG_ERROR([APR not found.])
+fi
+
+APR_SETIFNULL(CC, `$apr_config --cc`)
+APR_SETIFNULL(CPP, `$apr_config --cpp`)
+APR_ADDTO(CFLAGS, `$apr_config --cflags`)
+APR_ADDTO(CPPFLAGS, `$apr_config --cppflags --includes`)
+APR_ADDTO(LDFLAGS, `$apr_config --ldflags`)
+APR_ADDTO(LIBS, `$apr_config --libs --link-ld`)
+SHLIBPATH_VAR=`$apr_config --shlib-path-var`
+APR_BINDIR=`$apr_config --bindir`
+APR_INCLUDEDIR=`$apr_config --includedir`
+APR_VERSION=`$apr_config --version`
+APR_CONFIG="$apr_config"
+
+
+echo $ac_n "${nl}Configuring Apache Portable Runtime Utility library...${nl}"
+APR_FIND_APU("$srcdir/apr-util", "./apr-util", 1, 1)
+if test "$apu_found" = "no"; then
+  AC_MSG_ERROR([APR-util not found.])
+fi
+APR_ADDTO(LDFLAGS, `$apu_config --ldflags`)
+APU_BINDIR=`$apu_config --bindir`
+APU_INCLUDEDIR=`$apu_config --includedir`
+APU_VERSION=`$apu_config --version`
+APU_CONFIG="$APU_BINDIR/apu-`echo ${APU_VERSION} | sed 's,\..*,,'`-config"
+
+
+# Checks for libraries.
+# FIXME: Replace `main' with a function in `-liconv':
+AC_CHECK_LIB([iconv], [iconv], [], [AC_MSG_ERROR(library libiconv not found.)])
+AC_CHECK_LIB([Imlib2], [imlib_context_new], [], [AC_MSG_ERROR(library libImlib2 not found.)])
+AC_CHECK_LIB([onig], [onig_new], [], [AC_MSG_ERROR(library libonig not found.)])
+AC_CHECK_LIB([mcrypt], [mcrypt_module_open], [], [AC_MSG_ERROR(library libmcrypt not found.)])
+AC_CHECK_LIB([neo_utl], [hdf_init], [], [AC_MSG_ERROR(library libneo_utl not found.)])
+AC_CHECK_LIB([neo_cs], [cs_init], [], [AC_MSG_ERROR(library libneo_cs not found.)])
+AC_CHECK_LIB([apr-1], [apr_initialize], [], [AC_MSG_ERROR(apr_initialize not found.)])
+AC_CHECK_LIB([apr-1], [apr_dso_load])
+AC_CHECK_LIB([aprutil-1], [apr_dbd_init], [], [AC_MSG_ERROR(apr_dbd_init not found.)])
+
+
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([stdlib.h string.h stdbool.h iconv.h Imlib2.h mcrypt.h ClearSilver.h apr.h apr_dbd.h])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_C_CONST
+AC_TYPE_SIZE_T
+
+# Checks for library functions.
+AC_FUNC_REALLOC
+AC_CHECK_FUNCS([strerror gettimeofday mktime])
+
+AC_CONFIG_FILES([Makefile
+				src/Makefile])
+AC_OUTPUT
