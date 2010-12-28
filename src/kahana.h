@@ -28,9 +28,11 @@
 #include "apr_dso.h"
 #include "apr_dbd.h"
 #include "apr_sha1.h"
+#include "apr_mmap.h"
 
-#include "kahana_buffer.h"
 #include "kahana_log.h"
+#include "kahana_util.h"
+#include "kahana_buffer.h"
 #include "kahana_cmd.h"
 #include "kahana_string.h"
 #include "kahana_io.h"
@@ -46,9 +48,6 @@ apr_status_t kahanaInitilize( void );
 void kahanaTerminate( void );
 apr_status_t kahanaMalloc( apr_pool_t *p, size_t size, void **newobj, apr_pool_t **newp );
 const char **kahanaStackTrace( unsigned int level );
-apr_status_t kahanaRandom( void *rnd, size_t size );
-apr_status_t kahanaUniqueId( const char **unique, apr_pool_t *p );
-const char *kahanaHmacSHA1( apr_pool_t *p, const char *msg, const char *key );
 
 
 #endif
