@@ -73,7 +73,7 @@ apr_status_t kahanaBufCreate( kBuffer_t **newbo, apr_pool_t *p, size_t bytes, si
 	apr_pool_t *sp;
 	
 	if( ( rc = kahanaMalloc( p, sizeof( kBuffer_t ), (void**)&bo, &sp ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{
@@ -85,7 +85,7 @@ apr_status_t kahanaBufCreate( kBuffer_t **newbo, apr_pool_t *p, size_t bytes, si
 		
 		if( !( bo->mem = calloc( bo->nalloc, bo->bytes ) ) ){
 			rc = errno;
-			kahanaLogPut( NULL, NULL, "failed to calloc(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to calloc(): %s", strerror( rc ) );
 			apr_pool_destroy( sp );
 			bo = NULL;
 		}
@@ -115,7 +115,7 @@ int kahanaBufCompaction( kBuffer_t *bo )
 		bo->nmem = nsize;
 		if( ( bo->mem = realloc( bo->mem, nsize ) ) ){
 			rc = errno;
-			kahanaLogPut( NULL, NULL, "failed to realloc(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to realloc(): %s", strerror( rc ) );
 		}
 	}
 	
@@ -141,7 +141,7 @@ void kahanaBufSetNAllocSize( kBuffer_t *bo, size_t nalloc ){
 	bo->nalloc = nalloc;
 }
 
-#pragma mark String
+// MARK:  String
 int kahanaBufStrCompaction( kBuffer_t *bo )
 {
 	int rc = 0;
@@ -153,7 +153,7 @@ int kahanaBufStrCompaction( kBuffer_t *bo )
 		bo->nmem = nsize + 1;
 		if( ( bo->mem = realloc( bo->mem, nsize ) ) ){
 			rc = errno;
-			kahanaLogPut( NULL, NULL, "failed to realloc(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to realloc(): %s", strerror( rc ) );
 		}
 	}
 	
@@ -168,7 +168,7 @@ int kahanaBufStrSet( kBuffer_t *bo, const char *str )
 	{
 		size_t len = strlen( str );
 		if( ( rc = BufRealloc( bo, len + 1 ) ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrSet(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrSet(): %s", strerror( rc ) );
 		}
 		else{
 			memset( bo->mem, 0, bo->nmem );
@@ -188,7 +188,7 @@ int kahanaBufStrNSet( kBuffer_t *bo, const char *str, size_t len )
 	if( len > 0 )
 	{
 		if( ( rc = BufRealloc( bo, len + 1 ) ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrNSet(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrNSet(): %s", strerror( rc ) );
 		}
 		else{
 			memset( bo->mem, 0, bo->nmem );
@@ -207,7 +207,7 @@ int kahanaBufStrShift( kBuffer_t *bo, size_t cur, size_t n, size_t padding )
 	size_t len = bo->size;
 	
 	if( ( rc = BufShift( bo, cur, n, padding ) ) != 0 ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaBufStrShift(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaBufStrShift(): %s", strerror( rc ) );
 	}
 	else if( len != bo->size ){
 		((char*)bo->mem)[bo->size] = '\0';
@@ -225,7 +225,7 @@ int kahanaBufStrCat( kBuffer_t *bo, const char *str )
 		size_t len = strlen( str );
 		
 		if( ( rc = BufRealloc( bo, bo->size + len + 1 ) ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrCat(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrCat(): %s", strerror( rc ) );
 		}
 		else{
 			memcpy( bo->mem + bo->size, str, len );
@@ -244,7 +244,7 @@ int kahanaBufStrNCat( kBuffer_t *bo, const char *str, size_t n )
 	if( n > 0 )
 	{
 		if( ( rc = BufRealloc( bo, bo->size + n + 1 ) ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrCat(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrCat(): %s", strerror( rc ) );
 		}
 		else{
 			memcpy( bo->mem + bo->size, str, n );
@@ -262,7 +262,7 @@ int kahanaBufStrChrCat( kBuffer_t *bo, const char c )
 	int rc = BufRealloc( bo, bo->size + 2 );
 	
 	if( rc != 0 ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaBufStrCat(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaBufStrCat(): %s", strerror( rc ) );
 	}
 	else {
 		((char*)bo->mem)[bo->size] = c;
@@ -282,7 +282,7 @@ int kahanaBufStrInsert( kBuffer_t *bo, const char *ins, size_t cur )
 		size_t len = strlen( ins );
 		
 		if( ( rc = BufShift( bo, cur, len, 1 ) ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrInsert(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to kahanaBufStrInsert(): %s", strerror( rc ) );
 		}
 		// insert string
 		else{

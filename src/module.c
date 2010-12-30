@@ -24,7 +24,7 @@ typedef struct {
 	apr_dso_handle_sym_t sym;
 } kMethod_t;
 
-#pragma mark Static
+// MARK:  Static
 static kModuleLoader_t *GetModuleLoader( void ){
 	Kahana_t *kahana = _kahanaGlobal();
 	return kahana->loader;
@@ -41,7 +41,7 @@ static apr_status_t cbModuleCleanupMod( void *ctx )
 		
 		apr_hash_set( loader->mods, mod->filename, APR_HASH_KEY_STRING, NULL );
 		if( mod->handle && ( rc = apr_dso_unload( mod->handle ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to apr_dso_unload() reason %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to apr_dso_unload() reason %s", STRERROR_APR( rc ) );
 		}
 	}
 	
@@ -69,7 +69,7 @@ static apr_status_t _kahanaModuleMethodLoad( kModule_t *mod, const char *mmethod
 }
 
 
-#pragma mark Method
+// MARK:  Method
 apr_status_t kahanaModuleLabelMethodInvoke( const char *label, const char *mmethod, KMODULE_METHODINVOKE callback, void *ctx )
 {
 	kModuleLoader_t *loader = GetModuleLoader();
@@ -175,7 +175,7 @@ apr_status_t kahanaModuleMethodPreload( int breakIfNoImp, const char *mmethod, .
 }
 
 
-#pragma mark Module Context
+// MARK:  Module Context
 /*
 retval:
 	APR_SUCCESS
@@ -201,7 +201,7 @@ void **kahanaModuleContext( kModule_t *mod ){
 	return &mod->ctx;
 }
 
-#pragma mark Module
+// MARK:  Module
 int kahanaModuleList( apr_pool_t *p, kModule_t *mods[] )
 {
 	kModuleLoader_t *loader = GetModuleLoader();
@@ -298,7 +298,7 @@ apr_status_t kahanaModuleLoad( const char *filename, const char *label )
 	return rc;
 }
 
-#pragma mark Initialize
+// MARK:  Initialize
 apr_status_t _kahanaModuleInit( Kahana_t *kahana )
 {
 	apr_pool_t *p = NULL;

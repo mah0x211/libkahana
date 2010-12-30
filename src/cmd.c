@@ -59,13 +59,13 @@ void kahanaCmdDestroykAttr( kCmdAttr_t *attr )
 	if( attr )
 	{
 		if( attr->in && ( rc = apr_file_close( attr->in ) ) ){
-			kahanaLogPut( NULL, NULL, "%s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "%s", STRERROR_APR( rc ) );
 		}
 		if( attr->out && ( rc = apr_file_close( attr->out ) ) ){
-			kahanaLogPut( NULL, NULL, "%s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "%s", STRERROR_APR( rc ) );
 		}
 		if( attr->err && ( rc = apr_file_close( attr->err ) ) ){
-			kahanaLogPut( NULL, NULL, "%s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "%s", STRERROR_APR( rc ) );
 		}
 		if( attr->p ){
 			apr_pool_destroy( attr->p );
@@ -86,7 +86,7 @@ apr_status_t kahanaCmdRunProcess( kCmdAttr_t *attr, const char *program, const c
 		( ec = apr_file_seek( attr->err, APR_SET, &offerr ) ) )
 	{
 		attr->errcode = ec;
-		attr->errstr = kahanaLogErr2Str( ETYPE_APR, ec );
+		attr->errstr = STRERROR_APR( ec );
 		return attr->errcode;
 	}
 	offin = 0;
@@ -95,7 +95,7 @@ apr_status_t kahanaCmdRunProcess( kCmdAttr_t *attr, const char *program, const c
 	// processing
 	if(	( attr->errcode = apr_procattr_dir_set( attr->attr, dir ) ) ||
 		( attr->errcode = apr_proc_create( &proc, program, args, env, attr->attr, attr->p ) ) ){
-		attr->errstr = kahanaLogErr2Str( ETYPE_APR, attr->errcode );
+		attr->errstr = STRERROR_APR( attr->errcode );
 		return attr->errcode;
 	}
 	// wait while processing
@@ -104,7 +104,7 @@ apr_status_t kahanaCmdRunProcess( kCmdAttr_t *attr, const char *program, const c
 	if( ( ec = apr_file_seek( attr->out, APR_SET, &offout ) ) ||
 		( ec = apr_file_seek( attr->err, APR_SET, &offerr ) ) ){
 		attr->errcode = ec;
-		attr->errstr = kahanaLogErr2Str( ETYPE_APR, ec );
+		attr->errstr = STRERROR_APR( ec );
 		return attr->errcode;
 	}
 	
@@ -122,7 +122,7 @@ apr_status_t kahanaCmdRunProcess( kCmdAttr_t *attr, const char *program, const c
 		}
 		
 		if( rc && APR_EOF != rc ){
-			attr->errstr = kahanaLogErr2Str( ETYPE_APR, rc );
+			attr->errstr = STRERROR_APR( rc );
 		}
 		else {
 			attr->errstr = (const char*)apr_pstrcat( attr->p, attr->errstr, chunk, NULL );
@@ -137,8 +137,8 @@ apr_status_t kahanaCmdRunProcess( kCmdAttr_t *attr, const char *program, const c
 
 
 
-#pragma mark -
-#pragma mark Catalyst
+// MARK:  -
+// MARK:  Catalyst
 /*
 		apr_pool_create( &sp, kahana->ep );
 		fprintf( stderr, "Catalyst: Starting catalyst...\n" );

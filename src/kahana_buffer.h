@@ -23,7 +23,7 @@ size_t kahanaBufNAllocSize( kBuffer_t *bo );
 void kahanaBufSetNAllocSize( kBuffer_t *bo, size_t nalloc );
 
 
-#pragma mark String
+// MARK:  String
 int kahanaBufStrCompaction( kBuffer_t *bo );
 int kahanaBufStrSet( kBuffer_t *bo, const char *str );
 int kahanaBufStrNSet( kBuffer_t *bo, const char *str, size_t len );

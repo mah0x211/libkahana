@@ -15,7 +15,7 @@ struct kStock_t {
 };
 
 
-#pragma mark CALLBACK
+// MARK:  CALLBACK
 static apr_status_t ItemCleanup( void *ctx )
 {
 	if( ctx )
@@ -34,7 +34,7 @@ static apr_status_t ItemCleanup( void *ctx )
 	return APR_SUCCESS;
 }
 
-#pragma mark STATIC
+// MARK:  STATIC
 
 // key = "[^\\w\\.]";
 static apr_status_t SetValForKeyAs( kStock_t *s, const char *key, void *val, kStockValType_e as, kStockCbItemCleanup cleanup )
@@ -235,7 +235,7 @@ static apr_status_t RemoveItem( apr_pool_t *p, kStockItem_t *item, void *udata )
 }
 
 
-#pragma mark CREATE
+// MARK:  CREATE
 apr_status_t kahanaStockCreate( kStock_t **newstock, apr_pool_t *p )
 {
 	apr_pool_t *sp = NULL;
@@ -257,7 +257,7 @@ void kahanaStockDestroy( kStock_t *s )
 	}
 }
 
-#pragma mark PROPERTY
+// MARK:  PROPERTY
 bool kahanaStockHasKey( kStock_t *s, const char *key )
 {
 	return ( s && key && key[0] != '\0' && apr_hash_get( s->items, key, APR_HASH_KEY_STRING ) );
@@ -297,7 +297,7 @@ unsigned int kahanaStockNumberOfItems( kStock_t *s, const char *key )
 	return nitem;
 }
 
-#pragma mark SET
+// MARK:  SET
 // set as void*
 apr_status_t kahanaStockSetValForKey( kStock_t *s, void *val, const char *key, kStockCbItemCleanup cleanup ){
 	return SetValForKeyAs( s, key, val, STOCK_AS_PTR, cleanup );
@@ -348,7 +348,7 @@ apr_status_t kahanaStockSetLDValForKey( kStock_t *s, long double val, const char
 }
 
 
-#pragma mark GET
+// MARK:  GET
 // get as void*
 apr_status_t kahanaStockGetValForKey( kStock_t *s, void **val, const char *key, void *null ){
 	return GetValForKeyAs( s, (void*)val, key, STOCK_AS_PTR, null );
@@ -428,7 +428,7 @@ apr_status_t kahanaStockTraverseForKey( kStock_t *s, const char *key, kStockCbTr
 	return rc;
 }
 
-#pragma mark NODE CONTROL
+// MARK:  NODE CONTROL
 apr_status_t kahanaStockRemoveNodeForKey( kStock_t *s, const char *key )
 {
 	apr_status_t rc = APR_SUCCESS;

@@ -28,7 +28,7 @@ static kIOCache_t *GetCache( void )
 	return ( kahana ) ? kahana->iocache : NULL;
 }
 
-#pragma mark CACHE
+// MARK:  CACHE
 static void *CacheFile( apr_pool_t *p, const char *key, time_t mtime, size_t *size )
 {
 	kIOCache_t *c = GetCache();
@@ -77,12 +77,12 @@ static apr_status_t AddCache( const char *key, void *data, size_t size, time_t m
 		
 		// create cache packet
 		if( ( rc = kahanaMalloc( c->p, sizeof( kIOCacheFile_t ), (void**)&cfile, &p ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 		}
 		else if( ( elen = asprintf( &epoch, "|%lld", (long long)mtime ) ) == -1 ){
 			rc = errno;
 			apr_pool_destroy( p );
-			kahanaLogPut( NULL, NULL, "failed to asprintf(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to asprintf(): %s", strerror( rc ) );
 		}
 		else
 		{
@@ -103,7 +103,7 @@ static apr_status_t AddCache( const char *key, void *data, size_t size, time_t m
 }
 
 
-#pragma mark CACHE STATUS
+// MARK:  CACHE STATUS
 bool kahanaIOIsCached( const char *path )
 {
 	kIOCache_t *c = GetCache();
@@ -118,7 +118,7 @@ bool kahanaIOIsCached( const char *path )
 			struct stat finfo;
 			
 			if( stat( path, &finfo ) == -1 ){
-				kahanaLogPut( NULL, NULL, "failed to stat(): %s", kahanaLogErr2Str( ETYPE_SYS, errno ) );
+				kahanaLogPut( NULL, NULL, "failed to stat(): %s", strerror( errno ) );
 			}
 			else
 			{
@@ -134,7 +134,7 @@ bool kahanaIOIsCached( const char *path )
 }
 
 
-#pragma mark FILE AND DIRECTORY
+// MARK:  FILE AND DIRECTORY
 apr_status_t kahanaIOFStat( apr_pool_t *p, const char *path, apr_finfo_t *finfo, apr_int32_t wanted )
 {
 	return apr_stat( finfo, path, wanted, p );
@@ -174,10 +174,10 @@ apr_status_t kahanaIOReadDir( apr_pool_t *p, kDir_t **newDirObj, const char *pat
 	apr_status_t rc;
 	
 	if( ( rc = apr_dir_open( &dir, dirObj->path, p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to apr_dir_open(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to apr_dir_open(): %s", STRERROR_APR( rc ) );
 	}
 	else if( ( rc = kahanaMalloc( p, sizeof( kDir_t ), (void**)&dirObj, &sp ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{
@@ -194,7 +194,7 @@ apr_status_t kahanaIOReadDir( apr_pool_t *p, kDir_t **newDirObj, const char *pat
 			apr_finfo_t finfo = { 0 };
 			
 			if( ( rc = apr_dir_read( &finfo, wanted, dir ) ) ){
-				kahanaLogPut( NULL, NULL, "failed to apr_dir_read(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+				kahanaLogPut( NULL, NULL, "failed to apr_dir_read(): %s", STRERROR_APR( rc ) );
 				break;
 			}
 			else
@@ -214,7 +214,7 @@ apr_status_t kahanaIOReadDir( apr_pool_t *p, kDir_t **newDirObj, const char *pat
 		
 		rc = ( rc == APR_ENOENT ) ? APR_SUCCESS : rc;
 		if( ( rc = apr_dir_close( dir ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to apr_dir_close(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to apr_dir_close(): %s", STRERROR_APR( rc ) );
 		}
 	}
 	
@@ -235,7 +235,7 @@ apr_status_t kahanaIOTempDir( apr_pool_t *p, const char **dir )
 	
 	// create temp file
 	if( ( rc = apr_temp_dir_get( dir, p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to apr_temp_dir_get(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to apr_temp_dir_get(): %s", STRERROR_APR( rc ) );
 	}
 	
 	return rc;
@@ -258,7 +258,7 @@ apr_status_t kahanaIOMakeDir( apr_pool_t *p, apr_fileperms_t perm, ... )
 		else if( rc == APR_ENOENT )
 		{
 			if( ( rc = apr_dir_make_recursive( path, perm, p ) ) ){
-				kahanaLogPut( NULL, NULL, "failed to apr_dir_make_recursive(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+				kahanaLogPut( NULL, NULL, "failed to apr_dir_make_recursive(): %s", STRERROR_APR( rc ) );
 				break;
 			}
 		}
@@ -276,10 +276,10 @@ apr_status_t kahanaIOTempFile( apr_pool_t *p, apr_file_t **fp, apr_int32_t flags
 	
 	// create temp file
 	if( ( rc = apr_temp_dir_get( &tmpdir, p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to apr_temp_dir_get(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to apr_temp_dir_get(): %s", STRERROR_APR( rc ) );
 	}
 	else if( ( rc = apr_file_mktemp( fp, (char*)apr_pstrcat( p, tmpdir, "/XXXXXX", NULL ), flags, p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to apr_file_mktemp(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to apr_file_mktemp(): %s", STRERROR_APR( rc ) );
 	}
 	
 	return rc;
@@ -312,7 +312,7 @@ apr_status_t kahanaIOMakeSymlink( apr_pool_t *p, ... )
 			break;
 		}
 		if( rc == APR_ENOENT && symlink( src, sym ) == -1 ){
-			kahanaLogPut( NULL, NULL, "failed to symlink(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to symlink(): %s", strerror( rc ) );
 			break;
 		}
 	}
@@ -339,7 +339,7 @@ apr_status_t kahanaIOReadFile( apr_pool_t *p, apr_file_t *file, char **out )
 		}
 		
 		if( rc && rc != APR_EOF ){
-			kahanaLogPut( NULL, NULL, "failed to apr_file_read(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to apr_file_read(): %s", STRERROR_APR( rc ) );
 		}
 		else if( ( rc = kahanaBufStrNCat( bo, chunk, size ) ) == APR_SUCCESS ){
 			*out = apr_pstrdup( p, kahanaBufPtr( bo ) );
@@ -360,7 +360,7 @@ apr_status_t kahanaIOLoadFile( apr_pool_t *p, const char *path, size_t *size, bo
 	*size = 0;
 	if( stat( path, &finfo ) == -1 ){
 		rc = errno;
-		kahanaLogPut( NULL, NULL, "failed to stat(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to stat(): %s", strerror( rc ) );
 	}
 	else
 	{
@@ -372,7 +372,7 @@ apr_status_t kahanaIOLoadFile( apr_pool_t *p, const char *path, size_t *size, bo
 			*data = d;
 		}
 		else if( ( rc = apr_file_open( &file, path, APR_READ, APR_UREAD|APR_OS_DEFAULT, p ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to apr_file_open(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to apr_file_open(): %s", STRERROR_APR( rc ) );
 		}
 		else
 		{
@@ -398,7 +398,7 @@ apr_status_t _kahanaIOInit( Kahana_t *kahana )
 	
 	kahana->iocache = NULL;
 	if( ( rc = kahanaMalloc( kahana->p, sizeof( kIOCache_t ), (void**)&iocache, &p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{

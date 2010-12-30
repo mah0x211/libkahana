@@ -43,7 +43,7 @@ apr_status_t kahanaInitilize( void )
 	}
 	
 	if( rc != APR_SUCCESS ){
-		fprintf( stderr, "failed to kahanaInitilize(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		fprintf( stderr, "failed to kahanaInitilize(): %s", STRERROR_APR( rc ) );
 	}
 	
 	return rc;
@@ -60,7 +60,7 @@ void kahanaTerminate( void )
 	}
 }
 
-#pragma mark UTIL
+// MARK:  UTIL
 apr_status_t kahanaMalloc( apr_pool_t *p, size_t size, void **newobj, apr_pool_t **newp )
 {
 	apr_status_t rc = APR_SUCCESS;

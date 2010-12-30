@@ -19,7 +19,7 @@ static const double	degree = 180/M_PI;
 // 弧度
 static const double rad = M_PI/180;
 
-#pragma mark INIT AND FREE
+// MARK:  INIT AND FREE
 apr_status_t kahanaGeoCreate( kGeo_t **newgeo, apr_pool_t *p, double lat, double lon, size_t precision, bool isWGS84 )
 {
 	kGeo_t *geo = NULL;
@@ -27,7 +27,7 @@ apr_status_t kahanaGeoCreate( kGeo_t **newgeo, apr_pool_t *p, double lat, double
 	apr_status_t rc;
 	
 	if( ( rc = kahanaMalloc( p, sizeof( kGeo_t ), (void**)&geo, &sp ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{
@@ -101,7 +101,7 @@ void kahanaGeoSetLatLon( kGeo_t *geo, double lat, double lon, size_t precision, 
 	}
 }
 
-#pragma mark CONVERT
+// MARK:  CONVERT
 void kahanaGeoTokyo2WGS84( kGeo_t *geo )
 {
 	double olat = geo->lat;
@@ -136,7 +136,7 @@ apr_status_t kahanaGeoDMS2Deg( const char *dms, double *rv )
 			val = kahanaStrtod( token );
 			if( errno ){
 				rc = errno;
-				kahanaLogPut( NULL, NULL, "failed to kahanaStrtod(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+				kahanaLogPut( NULL, NULL, "failed to kahanaStrtod(): %s", strerror( rc ) );
 				break;
 			}
 			
@@ -149,7 +149,7 @@ apr_status_t kahanaGeoDMS2Deg( const char *dms, double *rv )
 				val = kahanaStrtod( ptr );
 				if( errno ){
 					rc = errno;
-					kahanaLogPut( NULL, NULL, "failed to kahanaStrtod(): %s", kahanaLogErr2Str( ETYPE_SYS, rc ) );
+					kahanaLogPut( NULL, NULL, "failed to kahanaStrtod(): %s", strerror( rc ) );
 					break;
 				}
 				deg += val/3600;
@@ -177,7 +177,7 @@ const char *kahanaGeoDeg2DMS( apr_pool_t *p, double deg )
 }
 
 
-#pragma mark GeoHash
+// MARK:  GeoHash
 void kahanaGeoHashEncode( kGeo_t *geo, size_t precision )
 {
 	static char bits[] = { 16, 8, 4, 2, 1 };

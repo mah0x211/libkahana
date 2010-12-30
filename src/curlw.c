@@ -44,13 +44,13 @@ apr_status_t kahanaCurlWrapCreate( kCurlWrap_t **newcw, apr_pool_t *p )
 	CURL *curl = NULL;
 	
 	if( ( rc = kahanaMalloc( p, sizeof( kCurlWrap_t ), (void**)&cw, &rp ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else if( ( rc = kahanaBufCreate( &bo, rp, sizeof( char ), 0 ) ) ){
 		apr_pool_destroy( rp );
 	}
 	else if( !( curl = curl_easy_init() ) ){
-		kahanaLogPut( NULL, NULL, "failed to curl_easy_init(): %s", kahanaLogErr2Str( ETYPE_SYS, errno ) );
+		kahanaLogPut( NULL, NULL, "failed to curl_easy_init(): %s", strerror( errno ) );
 		rc = APR_EGENERAL;
 		apr_pool_destroy( rp );
 	}
@@ -82,7 +82,7 @@ apr_status_t kahanaCurlWrapSetQuery( kCurlWrap_t *cw, const char *key, const cha
 			char *escval = curl_easy_escape( cw->curl, val, strlen( val ) );
 			
 			if( !escval ){
-				cw->errstr = apr_psprintf( cw->p, "failed to curl_easy_escape(): %s", kahanaLogErr2Str( ETYPE_SYS, errno ) );
+				cw->errstr = apr_psprintf( cw->p, "failed to curl_easy_escape(): %s", strerror( errno ) );
 				kahanaLogPut( NULL, NULL, cw->errstr );
 				cw->ec = APR_EGENERAL;
 			}
@@ -105,7 +105,7 @@ apr_status_t kahanakCurlWrapRequest( kCurlWrap_t *cw, bool post, const char *url
 	apr_pool_t *tp = NULL;
 	
 	if( ( cw->ec = apr_pool_create( &tp, cw->p ) ) ){
-		cw->errstr = apr_psprintf( cw->p, "failed to apr_pool_create(): %s", kahanaLogErr2Str( ETYPE_APR, cw->ec ) );
+		cw->errstr = apr_psprintf( cw->p, "failed to apr_pool_create(): %s", STRERROR_APR( cw->ec ) );
 		kahanaLogPut( NULL, NULL, cw->errstr );
 		return cw->ec;
 	}

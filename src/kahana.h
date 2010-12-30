@@ -22,7 +22,7 @@
 #include "apr_base64.h"
 #include "apr_file_info.h"
 #include "apr_file_io.h"
-#include "apr_thread_proc.h"
+#include "apr_thread_pool.h"
 #include "apr_hash.h"
 #include "apr_tables.h"
 #include "apr_dso.h"
@@ -48,6 +48,11 @@ apr_status_t kahanaInitilize( void );
 void kahanaTerminate( void );
 apr_status_t kahanaMalloc( apr_pool_t *p, size_t size, void **newobj, apr_pool_t **newp );
 const char **kahanaStackTrace( unsigned int level );
+
+#define STRERROR_APR(ec)({\
+	char _strbuf[HUGE_STRING_LEN]; \
+	apr_strerror( ec, _strbuf, HUGE_STRING_LEN ); \
+})
 
 
 #endif

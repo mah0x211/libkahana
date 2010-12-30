@@ -45,7 +45,7 @@ struct kJapaneseCharactorMap_t {
 };
 
 
-#pragma mark Japanese CodeMap
+// MARK:  Japanese CodeMap
 /*
 	Japanese hiragana half-width <-> full-width CharactorMap
 	
@@ -89,7 +89,7 @@ static apr_status_t InitJaCharMap( Kahana_t *kahana )
 	kJapaneseCharactorMap_t *sJaCMap = NULL;
 	
 	if( ( rc = kahanaMalloc( kahana->p, sizeof( kJapaneseCharactorMap_t ), (void**)&sJaCMap, &p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{
@@ -276,7 +276,7 @@ const char *kahanaStrJaReplace( apr_pool_t *p, const char *str, kStrJaCharReplac
 	return str;
 }
 
-#pragma mark Full to Half Convert
+// MARK:  Full to Half Convert
 const char *kahanaStrJaConvString( apr_pool_t *p, const char *str, const char **errstr )
 {
 	const char *val = NULL;
@@ -324,7 +324,7 @@ const char *kahanaStrJaConvNumber( apr_pool_t *p, const char *str, long long *nu
 			*num = kahanaStrtoll( val, 10 );
 			if( errno ){
 				val = NULL;
-				*errstr = kahanaLogErr2Str( ETYPE_SYS, errno );
+				*errstr = strerror( errno );
 			}
 			else
 			{
@@ -368,7 +368,7 @@ const char *kahanaStrJaConvRealNumber( apr_pool_t *p, const char *str, long doub
 			*num = kahanaStrtold( val );
 			if( errno ){
 				val = NULL;
-				*errstr = kahanaLogErr2Str( ETYPE_SYS, errno );
+				*errstr = strerror( errno );
 			}
 			else {
 				val = (const char*)apr_psprintf( p, "%.7f", (double)*num );
@@ -380,7 +380,7 @@ const char *kahanaStrJaConvRealNumber( apr_pool_t *p, const char *str, long doub
 }
 
 
-#pragma mark String
+// MARK:  String
 /*
 bit = ( ( bit >> 1 ) & 0x55555555 ) + ( bit & 0x55555555 );
 bit = ( ( bit >> 2 ) & 0x33333333 ) + ( bit & 0x33333333 );
@@ -495,18 +495,17 @@ long kahanaStrtol( const char *str, int base )
 {
 	long num = 0;
 	
-	if( str )
+	if( !str ){
+		errno = EINVAL;
+	}
+	else
 	{
 		char *eptr = NULL;
 		
 		errno = 0;
 		num = strtol( str, &eptr, base );
-		if( errno != 0 ){
+		if( errno ){
 			num = 0;
-		}
-		else if( strlen( eptr ) ){
-			num = 0;
-			errno = EINVAL;
 		}
 	}
 	
@@ -517,18 +516,17 @@ long long kahanaStrtoll( const char *str, int base )
 {
 	long long num = 0;
 	
-	if( str )
+	if( !str ){
+		errno = EINVAL;
+	}
+	else
 	{
 		char *eptr = NULL;
 		
 		errno = 0;
 		num = strtoll( str, &eptr, base );
-		if( errno != 0 ){
+		if( errno ){
 			num = 0;
-		}
-		else if( strlen( eptr ) ){
-			num = 0;
-			errno = EINVAL;
 		}
 	}
 	
@@ -539,18 +537,17 @@ unsigned long kahanaStrtoul( const char *str, int base )
 {
 	unsigned long num = 0;
 	
-	if( str )
+	if( !str ){
+		errno = EINVAL;
+	}
+	else
 	{
 		char *eptr = NULL;
 		
 		errno = 0;
 		num = strtoul( str, &eptr, base );
-		if( errno != 0 ){
+		if( errno ){
 			num = 0;
-		}
-		else if( strlen( eptr ) ){
-			num = 0;
-			errno = EINVAL;
 		}
 	}
 	
@@ -561,18 +558,17 @@ unsigned long long kahanaStrtoull( const char *str, int base )
 {
 	unsigned long long num = 0;
 	
-	if( str )
+	if( !str ){
+		errno = EINVAL;
+	}
+	else
 	{
 		char *eptr = NULL;
 		
 		errno = 0;
 		num = strtoull( str, &eptr, base );
-		if( errno != 0 ){
+		if( errno ){
 			num = 0;
-		}
-		else if( strlen( eptr ) ){
-			num = 0;
-			errno = EINVAL;
 		}
 	}
 	
@@ -583,18 +579,17 @@ double kahanaStrtod( const char *str )
 {
 	double num = 0;
 	
-	if( str && strlen( str ) )
+	if( !str ){
+		errno = EINVAL;
+	}
+	else
 	{
 		char *eptr = NULL;
 		
 		errno = 0;
 		num = strtod( str, &eptr );
-		if( errno != 0 ){
+		if( errno ){
 			num = 0;
-		}
-		else if( strlen( eptr ) ){
-			num = 0;
-			errno = EINVAL;
 		}
 	}
 	
@@ -604,18 +599,17 @@ long double kahanaStrtold( const char *str )
 {
 	long double num = 0;
 	
-	if( str && strlen( str ) )
+	if( !str ){
+		errno = EINVAL;
+	}
+	else
 	{
 		char *eptr = NULL;
 		
 		errno = 0;
 		num = strtold( str, &eptr );
-		if( errno != 0 ){
+		if( errno ){
 			num = 0;
-		}
-		else if( strlen( eptr ) ){
-			num = 0;
-			errno = EINVAL;
 		}
 	}
 	
@@ -623,26 +617,21 @@ long double kahanaStrtold( const char *str )
 }
 
 // convert upper to lower case
-void kahanaStrtoLower( apr_pool_t *p, char **str )
+void kahanaStrtoLower( char *str )
 {
-	char *cnt = malloc( strlen( *str ) * 2 );
-	char *ptr = *str;
-	size_t len = 0;
+	char *ptr = str;
 	
 	while( *ptr != '\0' ){
-		cnt[len++] = ( *ptr >= 'A' && *ptr <= 'Z' ) ? *ptr + 0x20 : *ptr;
+		*ptr = tolower( *ptr );
 		ptr++;
 	}
-	cnt[len] = '\0';
-	*str = (char*)apr_pstrdup( p, cnt );
-	free( cnt );
 }
 
 void kahanaStrtoUpper( char *str )
 {
 	char *ptr = str;
 	while( *ptr != '\0' ){
-		*ptr = ( *ptr >= 'a' && *ptr <= 'z' ) ? *ptr - 0x20 : *ptr;
+		*ptr = toupper( *ptr );
 		ptr++;
 	}
 }
@@ -685,9 +674,12 @@ const char *kahanaStrGetPathParentComponent( apr_pool_t *p, const char *path )
 {
 	const char *str = ( path ) ? rindex( path, '/' ) : NULL;
 	
-	str = ( str ) ? (const char *)apr_pstrndup( p, path, strlen( path ) - strlen( str ) ) : NULL;
-	if( str && strlen( str ) == 0 ){
-		str = "/";
+	if( str )
+	{
+		str = (const char *)apr_pstrndup( p, path, strlen( path ) - strlen( str ) );
+		if( strlen( str ) == 0 ){
+			str = "/";
+		}
 	}
 	
 	return str;
@@ -917,14 +909,14 @@ const char *kahanaStrIconv( apr_pool_t *p, const char *src, const char *from, co
 	const char *conv = NULL;
 	
 	if( ( rc = apr_pool_create( &tp, p ) ) ){
-		*errstr = apr_psprintf( p, "failed to apr_pool_create(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		*errstr = apr_psprintf( p, "failed to apr_pool_create(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{
 		iconv_t icv;
 		
 		if( ( icv = iconv_open( to, from ) ) == (iconv_t)-1 ){
-			*errstr = apr_psprintf( p, "failed to iconv_open( to:%s, from:%s ): %s", to, from, kahanaLogErr2Str( ETYPE_SYS, errno ) );
+			*errstr = apr_psprintf( p, "failed to iconv_open( to:%s, from:%s ): %s", to, from, strerror( errno ) );
 		}
 		else
 		{
@@ -935,7 +927,7 @@ const char *kahanaStrIconv( apr_pool_t *p, const char *src, const char *from, co
 			conv = buf;
 			buf_len--;
 			if( iconv( icv, (char**)&src, &len, &buf, &buf_len ) == -1 ){
-				*errstr = apr_psprintf( p, "failed to iconv(): %s", kahanaLogErr2Str( ETYPE_SYS, errno ) );
+				*errstr = apr_psprintf( p, "failed to iconv(): %s", strerror( errno ) );
 				conv = NULL;
 			}
 			else{
@@ -1059,7 +1051,7 @@ const void* kahanaStrDeleteOverlap( apr_pool_t *p, const char *src, const char *
 		ptr[len] = '\0';
 		
 		if( ( rc = apr_pool_create( &hp, p ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to apr_pool_create(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+			kahanaLogPut( NULL, NULL, "failed to apr_pool_create(): %s", STRERROR_APR( rc ) );
 		}
 		else
 		{
@@ -1261,7 +1253,7 @@ apr_array_header_t *StrExtract( request_rec *r, const char *srcStr, const char *
 
 
 
-#pragma mark Regexp
+// MARK:  Regexp
 /*
 	// EMAIL VALIDATION
 	// This is BNF from RFC822
@@ -1370,7 +1362,7 @@ apr_status_t kahanaStrRegexpNew( apr_pool_t *pp, kRegexp_t **newro, const char *
 	kRegexp_t *ro = NULL;
 	
 	if( ( rc = kahanaMalloc( pp, sizeof( kRegexp_t ), (void**)&ro, &p ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	else
 	{
@@ -1702,10 +1694,10 @@ const char *kahanaStrRegexpReplace( apr_pool_t *p, kRegexp_t *ro, const char *st
 		kahanaLogPut( NULL, NULL, "%s", errstr );
 	}
 	else if( ( rc = kahanaBufCreate( &bo, p, sizeof( char ), strlen( str ) * 2 ) ) ){
-		errstr = kahanaLogErr2Str( ETYPE_SYS, rc );
+		errstr = strerror( rc );
 	}
 	else if( ( rc = kahanaBufStrSet( bo, str ) ) ){
-		errstr = kahanaLogErr2Str( ETYPE_SYS, rc );
+		errstr = strerror( rc );
 		kahanaBufDestroy( bo );
 	}
 	else
@@ -1746,7 +1738,7 @@ const char *kahanaStrRegexpReplace( apr_pool_t *p, kRegexp_t *ro, const char *st
 		{
 			// replace
 			if( ( rc = kahanaBufStrReplaceFromTo( bo, region->beg[0], region->end[0], rep ) ) ){
-				errstr = kahanaLogErr2Str( ETYPE_SYS, rc );
+				errstr = strerror( rc );
 				break;
 			}
 			else {
@@ -1802,10 +1794,10 @@ const char *kahanaStrRegexpReplaceByCallback( apr_pool_t *p, kRegexp_t *ro, cons
 	}
 	// create string buffer object
 	else if( ( rc = kahanaBufCreate( &bo, p, sizeof( char ), 0 ) ) ){
-		errstr = kahanaLogErr2Str( ETYPE_SYS, rc );
+		errstr = strerror( rc );
 	}
 	else if( ( rc = kahanaBufStrSet( bo, str ) ) ){
-		errstr = kahanaLogErr2Str( ETYPE_SYS, rc );
+		errstr = strerror( rc );
 		kahanaBufDestroy( bo );
 	}
 	else
@@ -1862,7 +1854,7 @@ const char *kahanaStrRegexpReplaceByCallback( apr_pool_t *p, kRegexp_t *ro, cons
 				// replace
 				cur = region->beg[0] + strlen( rep );
 				if( ( rc = kahanaBufStrReplaceFromTo( bo, region->beg[0], region->end[0], rep ) ) ){
-					errstr = kahanaLogErr2Str( ETYPE_SYS, rc );
+					errstr = strerror( rc );
 					break;
 				}
 				ptr = kahanaBufPtr( bo );

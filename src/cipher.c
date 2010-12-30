@@ -79,7 +79,7 @@ kCipher_t *kahanaCipherInit( apr_pool_t *p, const char *cipher, const char *mode
 			*errstr = apr_psprintf( p, "selected cipher[%s:%s] work with only block mode.", cipher, mode );
 		}
 		else if( ( rc = apr_pool_create( &sp, p ) ) ){
-			*errstr = apr_psprintf( p, "%s",  kahanaLogErr2Str( ETYPE_APR, rc ) );
+			*errstr = apr_psprintf( p, "%s",  STRERROR_APR( rc ) );
 		}
 		else
 		{

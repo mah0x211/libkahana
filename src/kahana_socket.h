@@ -6,7 +6,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include "ev.h"
+#include "event.h"
 
 
 #define cbSocketNULL NULL
@@ -24,11 +24,11 @@ typedef enum {
 } kSocketType_e;
 
 /* callbacks */
-typedef int (*cbSocketOnAccept)( kSocketServer_t *server, const struct sockaddr_in addr, void **ctx );
-typedef const char *(*cbSocketOnRecv)( kSocketRequest_t *req, const char *buf, ssize_t len );
+typedef const char *(*cbSocketOnErr)( void );
+typedef bool (*cbSocketOnRecv)( kSocketRequest_t *req, const char *buf, ssize_t len );
 typedef int (*cbSocketOnSend)( kSocketRequest_t *req );
 typedef const char *(*cbSocketOnTimeout)( kSocketRequest_t *req );
-typedef const char *(*cbSocketOnSignal)( ev_signal *sig, int event, void *sock, kSocketType_e type );
+typedef const char *(*cbSocketOnSignal)( int signum, short event, void *sock, kSocketType_e type );
 
 /* server socket */
 struct kSocketServer_t {
@@ -36,12 +36,16 @@ struct kSocketServer_t {
 	kSocket_t *sock;
 	apr_hash_t *reqs;
 	uint64_t nbytes;
-	time_t timeout;
+	struct timeval timeout;
+	// thread pool
+	apr_thread_pool_t *thdp;
+	// user data
 	void *userdata;
 };
 
 /* request socket */
 struct kSocketRequest_t{
+	apr_thread_t *thd;
 	apr_pool_t *p;
 	kSocketServer_t *server;
 	const char *key;
@@ -50,9 +54,10 @@ struct kSocketRequest_t{
 	int rcvbuf;
 	int sndbuf;
 	// event
-	struct ev_timer watch_timer;
-	struct ev_io watch_fd;
-	// request line
+	struct event_base *loop;
+	struct event io_ev;
+	struct event timer_ev;
+	// context
 	void *ctx;
 };
 
@@ -75,19 +80,19 @@ int kahanaSocketOptSetSndTimeout( kSocket_t *sock, time_t sec, time_t usec );
 struct timeval kahanaSocketOptGetTimeout( kSocket_t *sock, int opt );
 int kahanaSocketOptSetTimeout( kSocket_t *sock, int opt, time_t sec, time_t usec );
 /* callbacks */
-apr_status_t kahanaSocketSetOnSignal( kSocket_t *sock, int signum, cbSocketOnSignal cb_signal );
-void kahanaSocketSetOnAccept( kSocket_t *sock, cbSocketOnAccept cb_accept );
+// apr_status_t kahanaSocketSetOnSignal( kSocket_t *sock, int signum, cbSocketOnSignal cb_signal );
 void kahanaSocketSetOnRecv( kSocket_t *sock, cbSocketOnRecv cb_recv );
 void kahanaSocketSetOnSend( kSocket_t *sock, cbSocketOnSend cb_send );
 void kahanaSocketSetOnTimeout( kSocket_t *sock, cbSocketOnTimeout cb_timeout );
+void kahanaSocketSetOnErr( kSocket_t *sock, cbSocketOnErr cb_err );
 /* dispatch */
-void kahanaSocketDispatch( kSocket_t *sock, int flg );
-
+int kahanaSocketLoop( kSocket_t *sock, int flg );
+int kahanaSocketUnloop( kSocket_t *sock );
 
 /* kSocketServer_t */
-apr_status_t kahanaSocketServerCreate( apr_pool_t *pp, kSocketServer_t **newserver, const char *host, const char *port, time_t timeout, int ai_flags, int ai_family, int ai_socktype, void *userdata );
+apr_status_t kahanaSocketServerCreate( apr_pool_t *pp, kSocketServer_t **newserver, const char *host, const char *port, size_t thd_max, int ai_flags, int ai_family, int ai_socktype, void *userdata );
 void kahanaSocketServerDestroy( kSocketServer_t *server );
 /* request timeout */
-void kahanaSocketServerSetTimeout( kSocketServer_t *server, time_t timeout );
+void kahanaSocketServerSetTimeout( kSocketServer_t *server, struct timeval timeout );
 
 #endif

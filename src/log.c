@@ -11,7 +11,7 @@ typedef struct {
 	FILE *out;
 } kLog_t;
 
-#pragma mark Static
+// MARK:  Static
 static apr_pool_t *GetRootPool( void )
 {
 	Kahana_t *kahana = _kahanaGlobal();
@@ -40,7 +40,7 @@ static bool IsDebug( void )
 	return kahana->debug;
 }
 
-#pragma mark Method
+// MARK:  Method
 /*
 int NEOERR2ERRNO( int neo_errno )
 {
@@ -117,23 +117,6 @@ const char *kahanaLogNEOERR2Str( NEOERR *nerr, bool trace, char *buf, size_t buf
 	return buf;
 }
 
-const char *kahanaLogErr2Str( kLogErrType_e type, int ec )
-{
-	const char *str = "unknown error";
-	char strbuf[HUGE_STRING_LEN];
-	
-	if( type == ETYPE_APR ){
-		str = apr_strerror( ec, strbuf, HUGE_STRING_LEN );
-	}
-	else if( type == ETYPE_SYS ){
-		str = strerror( ec );
-	}
-	else {
-		str = apr_strerror( APR_EGENERAL, strbuf, HUGE_STRING_LEN );
-	}
-	
-	return str;
-}
 
 apr_status_t kahanaLogOutput( const char *label, CB_LOGOUTPUT callback )
 {
@@ -163,7 +146,7 @@ apr_status_t kahanaLogOutput( const char *label, CB_LOGOUTPUT callback )
 			for( item = log->item; item; item = item->next )
 			{
 				if( ( rc = apr_rfc822_date( (char*)buf, item->timestamp ) ) ){
-					fprintf( log->out, "[%s] ", kahanaLogErr2Str( ETYPE_APR, rc ) );
+					fprintf( log->out, "[%s] ", STRERROR_APR( rc ) );
 				}
 				else {
 					fprintf( log->out, "[%s] ", buf );
@@ -232,7 +215,7 @@ apr_status_t _kahanaLogPut( const char *label, apr_pool_t *p, const char *file, 
 		}
 		// alloc
 		if( ( rc = kahanaMalloc( p, sizeof( kLog_t ), (void**)&log, &sp ) ) ){
-			fprintf( stderr, "[%s:%d:%s] failed to apr_pcalloc() reason: %s", __FILE__, __LINE__, __func__, kahanaLogErr2Str( ETYPE_APR, rc ) );
+			fprintf( stderr, "[%s:%d:%s] failed to apr_pcalloc() reason: %s", __FILE__, __LINE__, __func__, STRERROR_APR( rc ) );
 		}
 		else {
 			log->p = sp;

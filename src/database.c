@@ -43,7 +43,7 @@ struct kDbTxn_t {
 };
 
 
-#pragma mark STATIC
+// MARK:  STATIC
 static kDb_t *GetDb( void ){
 	Kahana_t *kahana = _kahanaGlobal();
 	return kahana->database;
@@ -58,10 +58,10 @@ static apr_status_t CheckDbConn( kDbConn_t *conn ){
 }
 
 static const char *GetDbError( kDbConn_t *conn, apr_status_t ec ){
-	return ( conn ) ? apr_dbd_error( conn->driver, conn->handle, ec ) : kahanaLogErr2Str( ETYPE_APR, APR_EGENERAL );
+	return ( conn ) ? apr_dbd_error( conn->driver, conn->handle, ec ) : STRERROR_APR( APR_EGENERAL );
 }
 
-#pragma mark CALLBACK
+// MARK:  CALLBACK
 static apr_status_t cbDbConnCleanup( void *ctx )
 {
 	if( ctx )
@@ -112,7 +112,7 @@ static apr_status_t cbDbTxnCleanup( void *ctx )
 }
 
 
-#pragma mark GET
+// MARK:  GET
 const char *kahanaDbError( const char *cid, apr_status_t ec )
 {
 	return GetDbError( GetDbConn( cid ), ec );
@@ -124,7 +124,7 @@ const char *kahanaDbDriverName( const char *cid )
 	return ( conn ) ? apr_dbd_name( conn->driver ) : NULL;
 }
 
-#pragma mark QUERY
+// MARK:  QUERY
 
 apr_status_t kahanaDbQryNew( const char **qid, const char *cid, apr_pool_t *p, const char *query )
 {
@@ -223,7 +223,7 @@ const char *kahanaDbQryResValForColAtRow( kDbQuery_t *qry, const char *colname, 
 }
 
 
-#pragma mark TRANSACTION
+// MARK:  TRANSACTION
 
 // apr_dbd_error( conn->driver, conn->handle, rc ) );
 apr_status_t kfDbTxnStart( kDbTxn_t **newtxn, const char *cid, apr_pool_t *p )
@@ -314,7 +314,7 @@ apr_status_t kfDbTxnSavePtRollback( kDbTxn_t *txn, const char *savept )
 }
 
 
-#pragma mark CONNECTION
+// MARK:  CONNECTION
 
 apr_status_t kahanaDbConnect( const char *cid, const char *driver, const char *params )
 {
@@ -338,7 +338,7 @@ apr_status_t kahanaDbConnect( const char *cid, const char *driver, const char *p
 			conn->handle = NULL;
 			
 			if( ( rc = apr_dbd_get_driver( p, driver, &conn->driver ) ) ){
-				kahanaLogPut( NULL, NULL, "failed to apr_dbd_get_driver() reason %s", kahanaLogErr2Str( ETYPE_APR, rc ) );
+				kahanaLogPut( NULL, NULL, "failed to apr_dbd_get_driver() reason %s", STRERROR_APR( rc ) );
 				apr_pool_destroy( p );
 			}
 			else if( ( rc = apr_dbd_open_ex( conn->driver, p, params, &conn->handle, &errstr ) ) ){
@@ -396,7 +396,7 @@ apr_status_t kahanaDbConnCheck( const char *cid )
 
 
 
-#pragma mark Initialize
+// MARK:  Initialize
 apr_status_t _kahanaDbInit( Kahana_t *kahana )
 {
 	apr_pool_t *p = NULL;

@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([libkahana], [1.0.0], [mah0x211@gmail.com])
+AC_INIT([libkahana], [0.5], [mah0x211@gmail.com])
 AC_CONFIG_SRCDIR([src/kahana.c])
 AM_INIT_AUTOMAKE([foreign no-dist no-installinfo no-installman -Wall])
 AC_CONFIG_HEADER([config.h])
@@ -57,6 +57,7 @@ AC_CHECK_LIB([onig], [onig_new], [], [AC_MSG_ERROR(library libonig not found.)])
 AC_CHECK_LIB([mcrypt], [mcrypt_module_open], [], [AC_MSG_ERROR(library libmcrypt not found.)])
 AC_CHECK_LIB([neo_utl], [hdf_init], [], [AC_MSG_ERROR(library libneo_utl not found.)])
 AC_CHECK_LIB([neo_cs], [cs_init], [], [AC_MSG_ERROR(library libneo_cs not found.)])
+AC_CHECK_LIB([event], [event_init], [], [AC_MSG_ERROR(library libevent not found.)])
 AC_CHECK_LIB([apr-1], [apr_initialize], [], [AC_MSG_ERROR(apr_initialize not found.)])
 AC_CHECK_LIB([apr-1], [apr_dso_load])
 AC_CHECK_LIB([aprutil-1], [apr_dbd_init], [], [AC_MSG_ERROR(apr_dbd_init not found.)])

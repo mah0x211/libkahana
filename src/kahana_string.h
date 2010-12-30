@@ -171,7 +171,7 @@ typedef struct {
 typedef const char *(*kahanaStrRegexpReplaceCallback)( size_t match, const char **group, void *ctx );
 
 
-#pragma mark Japanese CodeMap
+// MARK:  Japanese CodeMap
 /* Japanese Hiragana-Katakana CharactorMap */
 const char *kahanaStrJaMapFH( const char *str );
 const char *kahanaStrJaMapHK( const char *str );
@@ -182,7 +182,7 @@ const char *kahanaStrJaConvNumber( apr_pool_t *p, const char *str, long long *nu
 const char *kahanaStrJaConvRealNumber( apr_pool_t *p, const char *str, long double *num, const char **errstr );
 
 
-#pragma mark STRING
+// MARK:  STRING
 unsigned int kahanaStrByteCount( unsigned char c );
 size_t kahanaStrlen( const char *str );
 size_t kahanaStrPos( const char *str, size_t len );
@@ -196,7 +196,7 @@ unsigned long long kahanaStrtoull( const char *str, int base );
 double kahanaStrtod( const char *str );
 long double kahanaStrtold( const char *str );
 
-void kahanaStrtoLower( apr_pool_t *p, char **str );
+void kahanaStrtoLower( char *str );
 void kahanaStrtoUpper( char *str );
 
 bool kahanaStrCmp( const char *src, const char *exp );
@@ -221,7 +221,7 @@ const char* kahanaStrReplace( apr_pool_t *p, const char *srcStr, const char *tar
 apr_array_header_t* kahanaStrExtr( apr_pool_t *p, const char *srcStr, const char *startStr, const char *endStr, const int numberOfExtract, const int onlyInside, const int matchAll, const int allowEmpty );
 
 
-#pragma mark Regexp
+// MARK:  Regexp
 apr_status_t kahanaStrRegexpNew( apr_pool_t *pp, kRegexp_t **newro, const char *pattern, OnigOptionType option, OnigEncoding enc, OnigSyntaxType *syntax, const char **errstr );
 void kahanaStrRegexpFree( kRegexp_t *ro );
 bool kahanaStrRegexpMatchBool( apr_pool_t *p, kRegexp_t *ro, const char *str, const char *pattern, OnigOptionType option, const char **errstr );
