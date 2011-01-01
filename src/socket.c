@@ -7,17 +7,12 @@
 
 #include "kahana_socket.h"
 
-
 // BSD socket
 struct kSocket_t {
-	apr_pool_t *pp;
-	void *parent;
+	apr_pool_t *p;
 	kSocketType_e type;
 	int fd;
 	struct sockaddr_in addr;
-	int ai_flags;
-	int ai_family;
-	int ai_socktype;
 	// bufsize
 	int buf_rcv;
 	int buf_snd;
@@ -30,10 +25,14 @@ struct kSocket_t {
 	cbSocketOnSend cb_send;
 	cbSocketOnTimeout cb_timeout;
 	cbSocketOnSignal cb_signal[NSIG];
+	// thread pool
+	apr_thread_pool_t *thp;
 	// event
+	int evflg;
 	struct event_base *loop;
-	struct event io_ev;
 	struct event sig_ev[NSIG];
+	// user data
+	void *userdata;
 };
 
 static int SockOptSetNonBlock( int fd )
@@ -54,223 +53,452 @@ static int SockOptSetNonBlock( int fd )
 	return APR_SUCCESS;
 }
 
-static void RequestTimeout( int fd, short event, void *arg )
+static apr_status_t DestroySocket( void *data )
 {
-	kSocketRequest_t *req = (kSocketRequest_t*)arg;
+	kSocket_t *sock = (kSocket_t*)data;
 	
-	if( req->fd )
+	if( sock )
 	{
-		shutdown( req->fd, SHUT_RD );
-		if( req->server->sock->cb_timeout )
-		{
-			const char *res = req->server->sock->cb_timeout( req );
-			
-			if( res ){
-				send( req->fd, res, strlen( res ), 0 );
-			}
+		if( apr_thread_pool_threads_count( sock->thp ) ){
+			raise( SIGUSR1 );
 		}
-		shutdown( req->fd, SHUT_WR );
-	}
-	apr_pool_destroy( req->p );
-}
-
-
-static void RequestRecv( int fd, short event, void *arg )
-{
-	kSocketRequest_t *req = (kSocketRequest_t*)arg;
-	char buf[req->server->sock->buf_rcv];
-	// buf CR+LF
-	ssize_t len = 0;
-	
-	// stop timer if exists
-	if( req->server->timeout.tv_sec ){
-		evtimer_del( &req->timer_ev );
-	}
-	
-	if( ( len = recv( req->fd, buf, sizeof( buf ), 0 ) ) == 0 ){
-		fprintf( stderr, "recv(): nolen(): %d, %s\n", errno, strerror( errno ) );
-		event_base_loopbreak( req->loop );
-	}
-	else if( len == -1 )
-	{
-		// EAGAIN if non-blocking mode
-		switch( errno )
-		{
-			case EAGAIN:
-				fprintf( stderr, "EAGAIN to recv(): %d, %s\n", errno, strerror( errno ) );
-				return;
-			
-			default:
-				fprintf( stderr, "failed to recv(): %d, %s\n", errno, strerror( errno ) );
-				event_base_loopbreak( req->loop );
-		}
-	}
-	else if( !req->server->sock->cb_recv( req, buf, len ) ){
-		req->server->sock->cb_send( req );
-		event_base_loopbreak( req->loop );
-	}
-	else if( req->server->timeout.tv_sec )
-	{
-		int rc;
 		
-		evtimer_set( &req->timer_ev, RequestTimeout, (void*)req );
-		if( ( rc = event_base_set( req->loop, &req->timer_ev ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to event_base_set()" );
+		// socket descriptor
+		if( sock->fd ){
+			close( sock->fd );
+			sock->fd = 0;
 		}
-		else if( ( rc = evtimer_add( &req->timer_ev, &req->server->timeout ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to evtimer_add()" );
+		// event loop
+		if( sock->loop ){
+			event_base_free( sock->loop );
+			sock->loop = NULL;
+		}
+		// thread pool
+		if( sock->thp ){
+			apr_thread_pool_destroy( sock->thp );
 		}
 	}
+	
+	return APR_SUCCESS;
 }
 
 
-static apr_status_t RequestThreadDestroy( void *data )
+apr_status_t kahanaSockCreate( apr_pool_t *pp, kSocket_t **newsock, const char *host, const char *port, int ai_flags, int ai_family, int ai_socktype, void *userdata )
 {
-	kSocketRequest_t *req = (kSocketRequest_t*)data;
-	apr_status_t rc = APR_SUCCESS;
+	int rc = 0;
+	kSocket_t *sock = NULL;
+	apr_pool_t *p = NULL;
+	struct addrinfo hints, *res;
 	
-	// remove from hash
-	apr_hash_set( req->server->reqs, req->key, APR_HASH_KEY_STRING, NULL );
-	evtimer_del( &req->timer_ev );
-	event_del( &req->io_ev );
-	event_base_free( req->loop );
-	if( req->fd ){
-		close( req->fd );
-		req->fd = 0;
+	memset( (void*)&hints, 0, sizeof( hints ) );
+	hints.ai_family = ai_family;
+	hints.ai_socktype = ai_socktype;
+	hints.ai_flags = ai_flags;
+	hints.ai_protocol = 0;
+	
+	// allocate
+	if( ( rc = kahanaMalloc( pp, sizeof( kSocket_t ), (void*)&sock, &p ) ) ){
+		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
+	}
+	// create event loop
+	else if( !( sock->loop = event_base_new() ) ){
+		kahanaLogPut( NULL, NULL, "failed to event_base_new()" );
+		rc = APR_EGENERAL;
+		apr_pool_destroy( p );
+	}
+	// get address info
+	else if( ( rc = getaddrinfo( host, port, &hints, &res ) ) != 0 ){
+		kahanaLogPut( NULL, NULL, "failed to getaddrinfo(): %s", gai_strerror( rc ) );
+		apr_pool_destroy( p );
+	}
+	else
+	{
+		struct addrinfo *ptr = res;
+		int sockopt = 1;
+		
+		// find addrinfo
+		do
+		{
+			// create socket descriptor
+			if( ( sock->fd = socket( ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol ) ) != -1 ){
+				// set address info
+				memcpy( (void*)&sock->addr, (void*)ptr->ai_addr, ptr->ai_addrlen );
+				break;
+			}
+		} while( ( ptr = ptr->ai_next ) );
+		freeaddrinfo( res );
+		
+		if( sock->fd == -1 ){
+			rc = errno;
+			kahanaLogPut( NULL, NULL, "failed to socket(): %s", strerror( errno ) );
+		}
+		// set sockopt SO_REUSEADDR
+		else if( setsockopt( sock->fd, SOL_SOCKET, SO_REUSEADDR, (char*)&sockopt, sizeof( sockopt ) ) != 0 ){
+			rc = errno;
+			kahanaLogPut( NULL, NULL, "failed to setsockopt(): %s", strerror( errno ) );
+		}
+		// bind
+		else if( bind( sock->fd, (struct sockaddr*)&(sock->addr), sizeof( sock->addr ) ) != 0 ){
+			rc = errno;
+			kahanaLogPut( NULL, NULL, "failed to bind(): %s", strerror( errno ) );
+		}
+		/*
+		// Set the socket to non-blocking, this is essential in
+		// event based programming with libevent.
+		else if( ( rc = SockOptSetNonBlock( sock->fd ) ) != 0 ){
+			rc = errno;
+			kahanaLogPut( NULL, NULL, "failed to SockOptSetNonBlock(): %s", strerror( errno ) );
+		}
+		*/
+		// listen
+		else if( ( rc = listen( sock->fd, SOMAXCONN ) ) != 0 ){
+			rc = errno;
+			kahanaLogPut( NULL, NULL, "failed to listen(): %s", strerror( errno ) );
+		}
+		// no problem
+		// create socket structure
+		else
+		{
+			socklen_t len = 0;
+			
+			// initialize
+			sock->p = p;
+			sock->type = SOCKET_AS_UNKNOWN;
+			sock->cb_err = NULL;
+			sock->cb_recv = NULL;
+			sock->cb_send = NULL;
+			sock->cb_timeout = NULL;
+			sock->evflg = 0;
+			sock->thp = NULL;
+			sock->userdata = userdata;
+			apr_pool_cleanup_register( p, (void*)sock, DestroySocket, apr_pool_cleanup_null );
+			
+			// get default receive buffer size
+			if( ( len = sizeof( int ) ) &&
+				( getsockopt( sock->fd, SOL_SOCKET, SO_RCVBUF, (void*)&sock->buf_rcv, &len ) == -1 ) ){
+				kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
+			}
+			// get default send buffer size
+			else if( ( len = sizeof( int ) ) &&
+					 ( getsockopt( sock->fd, SOL_SOCKET, SO_SNDBUF, (void*)&sock->buf_snd, &len ) == -1 ) ){
+				kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
+			}
+			// get default receive timeout
+			else if( ( len = sizeof( struct timeval ) ) &&
+					 ( getsockopt( sock->fd, SOL_SOCKET, SO_RCVTIMEO, (void*)&sock->tval_rcv, &len ) == -1 ) ){
+				kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
+			}
+			// get default send timeout
+			else if( ( len = sizeof( struct timeval ) ) &&
+					 ( getsockopt( sock->fd, SOL_SOCKET, SO_SNDTIMEO, (void*)&sock->tval_snd, &len ) == -1 ) ){
+				kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
+			}
+			/*
+			if( kahanaSockOptSetTimeout( sock, SO_RCVTIMEO, 10, 10 ) != 0 ){
+				kahanaLogPut( NULL, NULL, "failed to kahanaSockOptSetTimeout(): %s", strerror( errno ) ); 
+			}
+			fprintf( stderr, "buf_rcv -> %d\nbuf_snd -> %d\ntval_rcv -> %lu.%u\ntval_snd -> %lu.%u\nSOMAXCONN -> %d\n", 
+					sock->buf_rcv, sock->buf_snd, 
+					sock->tval_rcv.tv_sec, sock->tval_rcv.tv_usec,
+					sock->tval_snd.tv_sec, sock->tval_snd.tv_usec,
+					SOMAXCONN );
+			*/
+			*newsock = sock;
+		}
+		
+		if( rc ){
+			close( sock->fd );
+			apr_pool_destroy( p );
+		}
 	}
 	
 	return rc;
 }
 
-static void *RequestThread( apr_thread_t *thd, void *arg )
+void kahanaSockDestroy( kSocket_t *sock )
 {
-	kSocketRequest_t *req = (kSocketRequest_t*)arg;
-	int rc;
-	
-	req->thd = thd;
-	// set request hash
-	apr_hash_set( req->server->reqs, req->key, APR_HASH_KEY_STRING, arg );
-	
-	// set io event
-	event_set( &req->io_ev, req->fd, EV_READ|EV_PERSIST, RequestRecv, arg );
-	// set priority
-	// ev_set_priority( &req->watch_fd, 0 );
-	if( ( rc = event_base_set( req->loop, &req->io_ev ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to event_base_set()" );
+	if( sock ){
+		apr_pool_destroy( sock->p );
 	}
-	// add with no timeout
-	else if( ( rc = event_add( &req->io_ev, NULL ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to event_add()" );
+}
+
+
+// MARK: Request Handler
+
+static void SocketRecv( int fd, short event, void *arg )
+{
+	kSockWorker_t *worker = (kSockWorker_t*)arg;
+	char buf[worker->sock->buf_rcv];
+	// buf CR+LF
+	ssize_t len = 0;
+	
+	if( ( len = recv( worker->fd, buf, sizeof( buf ), 0 ) ) == 0 ){
+		fprintf( stderr, "recv(): nolen(): %d, %s\n", errno, strerror( errno ) );
+		close( worker->fd );
+		event_del( &worker->req_ev );
+		worker->fd = 0;
+		// reschedule sock event
+		event_add( &worker->sock_ev, NULL );
 	}
-	// set timeout event if server->sock->timeout.tv_sec > 0
-	else if( req->server->timeout.tv_sec )
+	else if( len == -1 )
 	{
-		evtimer_set( &req->timer_ev, RequestTimeout, (void*)req );
-		if( ( rc = event_base_set( req->loop, &req->timer_ev ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to event_base_set()" );
-		}
-		else if( ( rc = evtimer_add( &req->timer_ev, NULL ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to evtimer_add()" );
+		fprintf( stderr, "recv(): len %lu\n", len );
+		// EAGAIN if non-blocking mode
+		switch( errno )
+		{
+			case EAGAIN:
+				// reschedule req event
+				event_add( &worker->req_ev, NULL );
+			break;
+			
+			default:
+				fprintf( stderr, "failed to recv(): %d, %s\n", errno, strerror( errno ) );
+				close( worker->fd );
+				event_del( &worker->req_ev );
+				worker->fd = 0;
+				// reschedule sock event
+				event_add( &worker->sock_ev, NULL );
 		}
 	}
-	// register cleanup
-	apr_pool_cleanup_register( req->p, (void*)req, RequestThreadDestroy, apr_pool_cleanup_null );
-	
-	// block dispatch
-	if( rc == 0 && ( rc = event_base_dispatch( req->loop ) ) == -1 ){
-		kahanaLogPut( NULL, NULL, "failed to event_base_loop()" );
+	// no more receive
+	else if( !worker->sock->cb_recv( worker, buf, len ) ){
+		shutdown( worker->fd, SHUT_RD );
+		worker->sock->cb_send( worker );
+		close( worker->fd );
+		event_del( &worker->req_ev );
+		worker->fd = 0;
+		// reschedule sock event
+		event_add( &worker->sock_ev, NULL );
 	}
-	// cleanup after dispatch
-	apr_pool_destroy( req->p );
-	
-	return NULL;
+	// reschedule request event
+	else{
+		event_add( &worker->req_ev, NULL );
+	}
 }
 
 static void SocketAccept( int sfd, short event, void *arg )
 {
-	kSocket_t *sock = (kSocket_t*)arg;
-	struct sockaddr_in addr;
+	kSockWorker_t *worker = (kSockWorker_t*)arg;
+	apr_status_t rc = APR_SUCCESS;
 	socklen_t len = sizeof( struct sockaddr_in );
-	// wait while client connection
-	int fd = accept( sock->fd, (struct sockaddr*)&addr, &len );
 	
-	if( fd == -1 ){
-		kahanaLogPut( NULL, NULL, "failed to accept(): %s", strerror( errno ) );
+	// wait while client connection
+	if( ( worker->fd = accept( worker->sock->fd, (struct sockaddr*)&worker->addr, &len ) ) == -1 ){
+		// reschedule sock event
+		event_add( &worker->sock_ev, NULL );
+	}
+	// Set the socket to non-blocking, this is essential in
+	// event based programming with libevent.
+	else if( SockOptSetNonBlock( worker->fd ) != 0 ){
+		kahanaLogPut( NULL, NULL, "failed to SockOptSetNonBlock(): %s", strerror( errno ) );
+		shutdown( worker->fd, SHUT_RD );
+		// call error callback
+		if( worker->sock->cb_err ){
+			const char *errstr = worker->sock->cb_err();
+			send( worker->fd, errstr, strlen( errstr ), 0 );
+		}
+		close( worker->fd );
+		worker->fd = 0;
+		// reschedule sock event
+		event_add( &worker->sock_ev, NULL );
 	}
 	else
 	{
-		apr_status_t rc;
-		kSocketServer_t *server = (kSocketServer_t*)sock->parent;
-		kSocketRequest_t *req = NULL;
-		apr_pool_t *p = NULL;
-		
-		// set non-blocking mode
-		if( SockOptSetNonBlock( fd ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to SockOptSetNonBlock(): %s", strerror( errno ) );
-			rc = errno;
-		}
-		// allocate Request_t
-		else if( ( rc = kahanaMalloc( sock->pp, sizeof( kSocketRequest_t ), (void**)&req, &p ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to kahanaMalloc() reasons %s", STRERROR_APR( rc ) );
+		/*
+		// get default receive/send buffer size
+		len = sizeof( int );
+		if( getsockopt( worker->fd, SOL_SOCKET, SO_RCVBUF, (void*)&worker->rcvbuf, &len ) == -1 ){
+			worker->rcvbuf = HUGE_STRING_LEN;
 		}
 		// get default receive/send buffer size
-		else if( ( ( len = sizeof( int ) ) && ( getsockopt( fd, SOL_SOCKET, SO_RCVBUF, (void*)&req->rcvbuf, &len ) == -1 ) ) ||
-				 ( ( len = sizeof( int ) ) && ( getsockopt( fd, SOL_SOCKET, SO_SNDBUF, (void*)&req->sndbuf, &len ) == -1 ) ) ){
-			kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
-			rc = errno;
-			apr_pool_destroy( p );
+		len = sizeof( int );
+		if( getsockopt( worker->fd, SOL_SOCKET, SO_SNDBUF, (void*)&worker->sndbuf, &len ) == -1 ){
+			worker->sndbuf = HUGE_STRING_LEN;
 		}
-		// create event loop
-		else if( !( req->loop = event_base_new() ) ){
-			kahanaLogPut( NULL, NULL, "failed to event_base_new()" );
-			rc = APR_EGENERAL;
-		}
-		else
-		{
-			req->thd = NULL;
-			req->p = p;
-			req->fd = fd;
-			req->key = kahanaStrI2S( p, fd );
-			req->server = server;
-			req->ctx = NULL;
-			memcpy( &req->addr, &addr, sizeof( addr ) );
-			// create request thread
-			if( ( rc = apr_thread_pool_push( server->thdp, RequestThread, (void*)req, APR_THREAD_TASK_PRIORITY_NORMAL, NULL ) ) ){
-				kahanaLogPut( NULL, NULL, "failed to apr_thread_pool_push(): %s", STRERROR_APR( rc ) );
-				event_base_free( req->loop );
-				apr_pool_destroy( p );
-			}
-		}
-		
-		if( rc )
-		{
-			shutdown( fd, SHUT_RD );
-			if( sock->cb_err ){
-				const char *errstr = sock->cb_err();
-				send( fd, errstr, strlen( errstr ), 0 );
-			}
-			close( fd );
+		*/
+		// init req event
+		event_set( &worker->req_ev, worker->fd, EV_READ, SocketRecv, arg );
+		event_base_set( worker->loop, &worker->req_ev );
+		// add with no timeout
+		if( ( rc = event_add( &worker->req_ev, NULL ) ) ){
+			kahanaLogPut( NULL, NULL, "failed to event_add()" );
 		}
 	}
 }
 
+
+static apr_status_t DestroyWorker( void *data )
+{
+	kSockWorker_t *worker = (kSockWorker_t*)data;
+	
+	if( worker->loop ){
+		raise( SIGUSR1 );
+	}
+	
+	return APR_SUCCESS;
+}
+
+static void WorkerSignal( int signum, short event, void *arg )
+{
+	kSockWorker_t *worker = (kSockWorker_t*)arg;
+	event_base_loopbreak( worker->loop );
+}
+
+apr_status_t SetWorkerSignal( kSockWorker_t *worker, int signum )
+{
+	apr_status_t rc = APR_SUCCESS;
+	
+	if( signum >= NSIG ){
+		rc = APR_EINVAL;
+	}
+	else
+	{
+		// set io event
+		event_set( &worker->sig_ev, signum, EV_SIGNAL|EV_PERSIST, WorkerSignal, (void*)worker );
+		event_base_set( worker->loop, &worker->sig_ev );
+		// add no timeout
+		if( ( rc = event_add( &worker->sig_ev, NULL ) ) ){
+			kahanaLogPut( NULL, NULL, "failed to event_add()" );
+		}
+		else {
+			rc = APR_SUCCESS;
+		}
+	}
+	
+	return rc;
+}
+
+static void *WorkerThread( apr_thread_t *thd, void *arg )
+{
+	kSockWorker_t *worker = (kSockWorker_t*)arg;
+	apr_status_t rc = APR_SUCCESS;
+	
+	worker->thd = thd;
+	// add signal events
+	if( ( rc = SetWorkerSignal( worker, SIGUSR1 ) ) ){
+		kahanaLogPut( NULL, NULL, "failed to SetWorkerSignal(): %s\n", STRERROR_APR( rc ) );
+	}
+	else
+	{
+		// init sock event
+		event_set( &worker->sock_ev, worker->sock->fd, EV_READ, SocketAccept, arg );
+		// ev_set_priority( &req->watch_fd, 0 );
+		event_base_set( worker->loop, &worker->sock_ev );
+		// add with no timeout
+		if( event_add( &worker->sock_ev, NULL ) == -1 ){
+			kahanaLogPut( NULL, NULL, "failed to event_add()" );
+		}
+		// block dispatch
+		else{
+			apr_pool_cleanup_register( worker->p, (void*)worker, DestroyWorker, apr_pool_cleanup_null );
+			event_base_loop( worker->loop, 0 );
+		}
+		if( worker->fd ){
+			close( worker->fd );
+			worker->fd = 0;
+		}
+		event_del( &worker->sig_ev );
+		event_del( &worker->req_ev );
+		event_del( &worker->sock_ev );
+		event_base_free( worker->loop );
+		worker->loop = NULL;
+	}
+	
+	return NULL;
+}
+
+// MARK: Socket Loop And Unloop
 static void SocketSignal( int signum, short event, void *arg )
 {
 	kSocket_t *sock = (kSocket_t*)arg;
 	cbSocketOnSignal callback = sock->cb_signal[signum];
 	
 	if( callback ){
-		callback( signum, event, sock->parent, sock->type );
+		callback( signum, sock, sock->userdata );
 	}
 }
 
-// MARK:  SOCKET OPTION
-int kahanaSocketOptGetRcvBuf( kSocket_t *sock )
+/*
+int flg: read ev.h
+	0,				blocking
+	EVLOOP_ONCE		block *once* only
+	EVLOOP_NONBLOCK	do not block/wait
+*/
+apr_status_t kahanaSockLoop( kSocket_t *sock, apr_size_t nth, int flg )
+{
+	apr_status_t rc = APR_SUCCESS;
+	
+	// create thread-pool
+	nth = ( nth ) ? nth : 1;
+	if( ( rc = apr_thread_pool_create( &sock->thp, 0, nth, sock->p ) ) ){
+		kahanaLogPut( NULL, NULL, "failed to apr_thread_pool_create(): %s", STRERROR_APR( rc ) );
+	}
+	else
+	{
+		apr_size_t i;
+		
+		sock->evflg = flg;
+		for( i = 1; i <= nth; i++ )
+		{
+			kSockWorker_t *nworker = NULL;
+			apr_pool_t *p = NULL;
+			
+			// allocate kSockWorker_t
+			if( ( rc = kahanaMalloc( sock->p, sizeof( kSockWorker_t ), (void**)&nworker, &p ) ) ){
+				kahanaLogPut( NULL, NULL, "failed to kahanaMalloc() reasons %s", STRERROR_APR( rc ) );
+				break;
+			}
+			// create event loop
+			else if( !( nworker->loop = event_base_new() ) ){
+				kahanaLogPut( NULL, NULL, "failed to event_base_new()" );
+				rc = APR_EGENERAL;
+				apr_pool_destroy( p );
+				break;
+			}
+			else
+			{
+				nworker->p = p;
+				nworker->nth = i;
+				nworker->sock = sock;
+				nworker->next = NULL;
+				// create worker thread
+				if( ( rc = apr_thread_pool_push( sock->thp, WorkerThread, (void*)nworker, APR_THREAD_TASK_PRIORITY_NORMAL, NULL ) ) ){
+					kahanaLogPut( NULL, NULL, "failed to apr_thread_pool_push(): %s", STRERROR_APR( rc ) );
+					event_base_free( nworker->loop );
+					apr_pool_destroy( p );
+					break;
+				}
+			}
+		}
+		
+		if( rc ){
+			raise( SIGUSR1 );
+			apr_thread_pool_destroy( sock->thp );
+		}
+		// block dispatch
+		else if( ( rc = event_base_loop( sock->loop, 0 ) ) == -1 ){
+			kahanaLogPut( NULL, NULL, "failed to event_base_loop()" );
+		}
+	}
+	
+	return rc;
+}
+
+int kahanaSockUnloop( kSocket_t *sock )
+{
+	raise( SIGUSR1 );
+	apr_thread_pool_destroy( sock->thp );
+	return event_base_loopbreak( sock->loop );
+}
+
+
+// MARK: Socket Option
+int kahanaSockOptGetRcvBuf( kSocket_t *sock )
 {
 	return sock->buf_rcv;
 }
 
-int kahanaSocketOptSetRcvBuf( kSocket_t *sock, int bytes )
+int kahanaSockOptSetRcvBuf( kSocket_t *sock, int bytes )
 {
 	// set receive buffer size
 	if( bytes > 0 )
@@ -287,12 +515,12 @@ int kahanaSocketOptSetRcvBuf( kSocket_t *sock, int bytes )
 	return 0;
 }
 
-struct timeval kahanaSocketOptGetRcvTimeout( kSocket_t *sock )
+struct timeval kahanaSockOptGetRcvTimeout( kSocket_t *sock )
 {
 	return sock->tval_rcv;
 }
 
-int kahanaSocketOptSetRcvTimeout( kSocket_t *sock, time_t sec, time_t usec )
+int kahanaSockOptSetRcvTimeout( kSocket_t *sock, time_t sec, time_t usec )
 {
 	int rc = 0;
 	struct timeval tval;
@@ -309,18 +537,16 @@ int kahanaSocketOptSetRcvTimeout( kSocket_t *sock, time_t sec, time_t usec )
 	return rc;
 }
 
-
-
-int kahanaSocketOptGetSndBuf( kSocket_t *sock )
+int kahanaSockOptGetSndBuf( kSocket_t *sock )
 {
 	return sock->buf_snd;
 }
-struct timeval kahanaSocketOptGetSndTimeout( kSocket_t *sock )
+struct timeval kahanaSockOptGetSndTimeout( kSocket_t *sock )
 {
 	return sock->tval_snd;
 }
 
-int kahanaSocketOptSetSndTimeout( kSocket_t *sock, time_t sec, time_t usec )
+int kahanaSockOptSetSndTimeout( kSocket_t *sock, time_t sec, time_t usec )
 {
 	int rc = 0;
 	struct timeval tval;
@@ -338,7 +564,7 @@ int kahanaSocketOptSetSndTimeout( kSocket_t *sock, time_t sec, time_t usec )
 }
 
 // MARK: Register Socket Callback
-apr_status_t kahanaSocketSetOnSignal( kSocket_t *sock, int signum, cbSocketOnSignal cb_signal )
+apr_status_t kahanaSockSetOnSignal( kSocket_t *sock, int signum, cbSocketOnSignal cb_signal )
 {
 	apr_status_t rc = APR_SUCCESS;
 	
@@ -364,168 +590,36 @@ apr_status_t kahanaSocketSetOnSignal( kSocket_t *sock, int signum, cbSocketOnSig
 	return rc;
 }
 
-void kahanaSocketSetOnErr( kSocket_t *sock, cbSocketOnErr cb_err )
+void kahanaSockSetOnErr( kSocket_t *sock, cbSocketOnErr cb_err )
 {
 	sock->cb_err = cb_err;
 }
-void kahanaSocketSetOnRecv( kSocket_t *sock, cbSocketOnRecv cb_recv )
+
+void kahanaSockSetOnRecv( kSocket_t *sock, cbSocketOnRecv cb_recv )
 {
 	sock->cb_recv = cb_recv;
 }
 
-void kahanaSocketSetOnSend( kSocket_t *sock, cbSocketOnSend cb_send )
+void kahanaSockSetOnSend( kSocket_t *sock, cbSocketOnSend cb_send )
 {
 	sock->cb_send = cb_send;
 }
-void kahanaSocketSetOnTimeout( kSocket_t *sock, cbSocketOnTimeout cb_timeout )
+void kahanaSockSetOnTimeout( kSocket_t *sock, cbSocketOnTimeout cb_timeout )
 {
 	sock->cb_timeout = cb_timeout;
 }
 
-
 /*
-int flg: read ev.h
-	0,				blocking
-	EVLOOP_ONCE		block *once* only
-	EVLOOP_NONBLOCK	do not block/wait
-*/
-int kahanaSocketLoop( kSocket_t *sock, int flg )
-{
-	int rc;
-	// set io event
-	event_set( &sock->io_ev, sock->fd, EV_READ|EV_PERSIST, SocketAccept, (void*)sock );
-	if( ( rc = event_base_set( sock->loop, &sock->io_ev ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to event_base_set()" );
-	}
-	// add no timeout
-	else if( ( rc = event_add( &sock->io_ev, NULL ) ) ){
-		kahanaLogPut( NULL, NULL, "failed to event_add()" );
-	}
-	else if( ( rc = event_base_loop( sock->loop, flg ) ) == -1 ){
-		kahanaLogPut( NULL, NULL, "failed to event_base_loop()" );
-	}
-	
-	return rc;
-}
-
-int kahanaSocketUnloop( kSocket_t *sock )
-{
-	return event_base_loopbreak( sock->loop );
-}
-
-
-int kahanaSocketCreate( apr_pool_t *p, kSocket_t **newsock, const char *host, const char *port, int ai_flags, int ai_family, int ai_socktype )
-{
-	int rc = 0;
-	kSocket_t *sock;
-	
-	// invalid params
-	if( !( sock = (kSocket_t*)apr_pcalloc( p, sizeof( kSocket_t ) ) ) ){
-		rc = ENOMEM;
-		kahanaLogPut( NULL, NULL, "failed to apr_pcalloc() reason %s", strerror( rc ) );
-	}
-	else
-	{
-		struct addrinfo hints, *res;
-		sock->pp = p;
-		sock->parent = NULL;
-		sock->type = SOCKET_AS_UNKNOWN;
-		sock->ai_flags = ai_flags;
-		sock->ai_family = ai_family;
-		sock->ai_socktype = ai_socktype;
-		sock->cb_err = NULL;
-		sock->cb_recv = NULL;
-		sock->cb_send = NULL;
-		sock->cb_timeout = NULL;
-		memset( &sock->io_ev, 0, sizeof( sock->io_ev ) );
-		sock->loop = NULL;
-		memset( (void*)&sock->addr, 0, sizeof( sock->addr ) );
-		
-		memset( (void*)&hints, 0, sizeof( hints ) );
-		hints.ai_family = ai_family;
-		hints.ai_socktype = ai_socktype;
-		hints.ai_flags = ai_flags;
-		hints.ai_protocol = 0;
-		// get address info
-		if( ( rc = getaddrinfo( host, port, &hints, &res ) ) != 0 ){
-			kahanaLogPut( NULL, NULL, "failed to getaddrinfo(): %s", gai_strerror( rc ) );
-		}
-		else
-		{
-			struct addrinfo *ptr = res;
-			int sockopt = 1;
-			socklen_t len = 0;
-			
-			// find addrinfo
-			do
-			{
-				if( ( sock->fd = socket( ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol ) ) != -1 ){
-					break;
-				}
-			} while( ( ptr = ptr->ai_next ) );
-			
-			if( sock->fd == -1 ){
-				rc = errno;
-				kahanaLogPut( NULL, NULL, "failed to socket(): %s", strerror( errno ) );
-			}
-			else
-			{
-				// set address info
-				memcpy( (void*)&sock->addr, (void*)ptr->ai_addr, ptr->ai_addrlen );
-				// set sockopt SO_REUSEADDR
-				if( setsockopt( sock->fd, SOL_SOCKET, SO_REUSEADDR, (char*)&sockopt, sizeof( sockopt ) ) != 0 ){
-					rc = errno;
-					kahanaLogPut( NULL, NULL, "failed to setsockopt(): %s", strerror( errno ) );
-				}
-				// get default receive buffer size
-				else if( ( len = sizeof( int ) ) &&
-						( getsockopt( sock->fd, SOL_SOCKET, SO_RCVBUF, (void*)&sock->buf_rcv, &len ) == -1 ) ){
-					rc = errno;
-					kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
-				}
-				// get default send buffer size
-				else if( ( len = sizeof( int ) ) &&
-						( getsockopt( sock->fd, SOL_SOCKET, SO_SNDBUF, (void*)&sock->buf_snd, &len ) == -1 ) ){
-					rc = errno;
-					kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
-				}
-				// get default receive timeout
-				else if( ( len = sizeof( struct timeval ) ) &&
-						( getsockopt( sock->fd, SOL_SOCKET, SO_RCVTIMEO, (void*)&sock->tval_rcv, &len ) == -1 ) ){
-					rc = errno;
-					kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
-				}
-				// get default send timeout
-				else if( ( len = sizeof( struct timeval ) ) &&
-						( getsockopt( sock->fd, SOL_SOCKET, SO_SNDTIMEO, (void*)&sock->tval_snd, &len ) == -1 ) ){
-					rc = errno;
-					kahanaLogPut( NULL, NULL, "failed to getsockopt(): %d", strerror( errno ) );
-				}
-				// create event loop
-				else if( !( sock->loop = event_base_new() ) ){
-					rc = APR_EGENERAL;
-					kahanaLogPut( NULL, NULL, "failed to event_base_new()" );
-				}
-				// nothing problem
-				else {
-					*newsock = sock;
-				}
-				
-				if( rc ){
-					close( sock->fd );
-				}
-			}
-			freeaddrinfo( res );
-		}
-	}
-	
-	return rc;
-}
-
 // MARK:  SERVER SOCKET
+
+void kahanaSockServerSetTimeout( kSockServer_t *server, struct timeval timeout )
+{
+	server->timeout = timeout;
+}
+
 static apr_status_t SocketServerDestroy( void *data )
 {
-	kSocketServer_t *server = (kSocketServer_t*)data;
+	kSockServer_t *server = (kSockServer_t*)data;
 	
 	if( server )
 	{
@@ -546,27 +640,25 @@ static apr_status_t SocketServerDestroy( void *data )
 	return APR_SUCCESS;
 }
 
-void kahanaSocketServerSetTimeout( kSocketServer_t *server, struct timeval timeout )
-{
-	server->timeout = timeout;
-}
+*/
 
 /*
 create socket and bind, listen
 APR_EGENERAL
 */
-apr_status_t kahanaSocketServerCreate( apr_pool_t *pp, kSocketServer_t **newserver, const char *host, const char *port, size_t thd_max, int ai_flags, int ai_family, int ai_socktype, void *userdata )
+/*
+apr_status_t kahanaSockServerCreate( apr_pool_t *pp, kSockServer_t **newserver, const char *host, const char *port, size_t thd_max, int ai_flags, int ai_family, int ai_socktype, void *userdata )
 {
 	apr_status_t rc = APR_SUCCESS;
 	apr_pool_t *p = NULL;
-	kSocketServer_t *server = NULL;
+	kSockServer_t *server = NULL;
 	
 	// invalid params
 	if( !host || !port ){
 		rc = APR_EINVAL;
 	}
 	// allocate
-	else if( ( rc = kahanaMalloc( pp, sizeof( kSocketServer_t ), (void*)&server, &p ) ) ){
+	else if( ( rc = kahanaMalloc( pp, sizeof( kSockServer_t ), (void*)&server, &p ) ) ){
 		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 	}
 	// create thread-pool
@@ -575,7 +667,7 @@ apr_status_t kahanaSocketServerCreate( apr_pool_t *pp, kSocketServer_t **newserv
 		apr_pool_destroy( p );
 	}
 	// create socket
-	else if( ( rc = kahanaSocketCreate( p, &server->sock, host, port, ai_flags, ai_family, ai_socktype ) ) ){
+	else if( ( rc = kahanaSockCreate( p, &server->sock, host, port, ai_flags, ai_family, ai_socktype ) ) ){
 		kahanaLogPut( NULL, NULL, "failed to kahanaMalloc(): %s", STRERROR_APR( rc ) );
 		apr_pool_destroy( p );
 	}
@@ -608,16 +700,6 @@ apr_status_t kahanaSocketServerCreate( apr_pool_t *pp, kSocketServer_t **newserv
 		// nothing problem
 		else
 		{
-			/*
-			if( kahanaSocketOptSetTimeout( server->sock, SO_RCVTIMEO, 10, 10 ) != 0 ){
-				kahanaLogPut( NULL, NULL, "failed to kahanaSocketOptSetTimeout(): %s", strerror( errno ) ); 
-			}
-			fprintf( stderr, "buf_rcv -> %d, buf_snd -> %d, tval_rcv -> %u.%u, tval_snd -> %u.%u, SOMAXCONN -> %d\n", 
-					server->sock->buf_rcv, server->sock->buf_snd, 
-					server->sock->tval_rcv.tv_sec, server->sock->tval_rcv.tv_usec,
-					server->sock->tval_snd.tv_sec, server->sock->tval_snd.tv_usec,
-					SOMAXCONN );
-			*/
 			*newserver = server;
 		}
 		
@@ -629,10 +711,11 @@ apr_status_t kahanaSocketServerCreate( apr_pool_t *pp, kSocketServer_t **newserv
 	return rc;
 }
 
-void kahanaSocketServerDestroy( kSocketServer_t *server )
+void kahanaSockServerDestroy( kSockServer_t *server )
 {
 	if( server ){
 		apr_pool_destroy( server->p );
 	}
 }
+*/
 
