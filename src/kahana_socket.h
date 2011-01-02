@@ -37,9 +37,8 @@ struct kSockWorker_t{
 	apr_size_t nth;
 	kSocket_t *sock;
 	apr_thread_t *thd;
+	struct sockaddr_in addr;
 	kSockWorkerCore_t *core;
-	// context
-	void *ctx;
 };
 
 /* kSocket_t */

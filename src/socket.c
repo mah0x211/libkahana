@@ -37,16 +37,15 @@ struct kSocket_t {
 
 // socket worker core
 struct kSockWorkerCore_t {
+	// client socket
+	int fd;
+	int rcvbuf;
+	int sndbuf;
 	// event
 	struct event_base *loop;
 	struct event sig_ev;
 	struct event sock_ev;
 	struct event req_ev;
-	// client socket
-	struct sockaddr_in addr;
-	int fd;
-	int rcvbuf;
-	int sndbuf;
 };
 
 static void _cbErrNull( kSockWorker_t *worker, int fd, kSockErrno_e errnum ){}
@@ -165,14 +164,12 @@ apr_status_t kahanaSockCreate( apr_pool_t *pp, kSocket_t **newsock, const char *
 			rc = errno;
 			kahanaLogPut( NULL, NULL, "failed to bind(): %s", strerror( errno ) );
 		}
-		/*
 		// Set the socket to non-blocking, this is essential in
 		// event based programming with libevent.
 		else if( ( rc = SockOptSetNonBlock( sock->fd ) ) != 0 ){
 			rc = errno;
 			kahanaLogPut( NULL, NULL, "failed to SockOptSetNonBlock(): %s", strerror( errno ) );
 		}
-		*/
 		// listen
 		else if( ( rc = listen( sock->fd, SOMAXCONN ) ) != 0 ){
 			rc = errno;
@@ -301,14 +298,13 @@ static void SocketAccept( int sfd, short event, void *arg )
 	socklen_t len = sizeof( struct sockaddr_in );
 	
 	// wait while client connection
-	if( ( worker->core->fd = accept( worker->sock->fd, (struct sockaddr*)&worker->core->addr, &len ) ) == -1 ){
+	if( ( worker->core->fd = accept( worker->sock->fd, (struct sockaddr*)&worker->addr, &len ) ) == -1 ){
 		// reschedule sock event
 		event_add( &worker->core->sock_ev, NULL );
 	}
 	// Set the socket to non-blocking, this is essential in
 	// event based programming with libevent.
 	else if( SockOptSetNonBlock( worker->core->fd ) != 0 ){
-		// kahanaLogPut( NULL, NULL, "failed to SockOptSetNonBlock(): %s", strerror( errno ) );
 		shutdown( worker->core->fd, SHUT_RD );
 		// call error callback
 		worker->sock->cb_err( worker, worker->core->fd, SOCK_OPT_NONBLOCK );
@@ -413,7 +409,7 @@ static void *WorkerThread( apr_thread_t *thd, void *arg )
 			close( worker->core->fd );
 			worker->core->fd = 0;
 		}
-		event_del( &worker->core->sig_ev );
+		// event_del( &worker->core->sig_ev );
 		event_del( &worker->core->req_ev );
 		event_del( &worker->core->sock_ev );
 		event_base_free( worker->core->loop );

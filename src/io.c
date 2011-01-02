@@ -353,7 +353,7 @@ apr_status_t kahanaIOReadFile( apr_pool_t *p, apr_file_t *file, char **out )
 
 apr_status_t kahanaIOLoadFile( apr_pool_t *p, const char *path, size_t *size, bool *is_cache, void **data )
 {
-	apr_status_t rc;
+	apr_status_t rc = APR_SUCCESS;
 	struct stat finfo;
 	char *d = NULL;
 	
